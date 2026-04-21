@@ -101,6 +101,12 @@ def _build_parser(defaults: TrainDefaults) -> argparse.ArgumentParser:
     p.add_argument("--grad-clip", type=float, default=defaults.grad_clip)
     p.add_argument("--mixup-alpha", type=float, default=defaults.mixup_alpha)
     p.add_argument("--strong-aug", action="store_true", default=defaults.strong_aug)
+    p.add_argument(
+        "--amp",
+        choices=("on", "off"),
+        default="on",
+        help="fp16 autocast + GradScaler; disable for networks with LRN (e.g. AlexNet)",
+    )
     p.add_argument("--resume", type=str, default="")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--log-interval", type=int, default=50)
@@ -173,7 +179,8 @@ def run(
             weight_decay=args.weight_decay,
         )
 
-    scaler = GradScaler("cuda") if device.type == "cuda" else GradScaler("cpu")
+    use_amp = args.amp == "on" and device.type == "cuda"
+    scaler = GradScaler(device.type, enabled=use_amp)
 
     start_epoch = 0
     best_acc1 = 0.0
@@ -225,7 +232,7 @@ def run(
                 ya, yb, lam = targets, targets, 1.0
 
             optimizer.zero_grad(set_to_none=True)
-            with autocast(device_type=device.type, enabled=device.type == "cuda"):
+            with autocast(device_type=device.type, enabled=use_amp):
                 out = model(images)
                 if isinstance(out, tuple):
                     logits, *aux = out
@@ -277,7 +284,7 @@ def run(
             for images, targets in val_loader:
                 images = images.to(device, non_blocking=True)
                 targets = targets.to(device, non_blocking=True)
-                with autocast(device_type=device.type, enabled=device.type == "cuda"):
+                with autocast(device_type=device.type, enabled=use_amp):
                     logits = model(images)
                     if isinstance(logits, tuple):
                         logits = logits[0]
