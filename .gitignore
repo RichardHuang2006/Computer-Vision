@@ -1,0 +1,15 @@
+data/*
+!data/.gitkeep
+runs/*
+!runs/.gitkeep
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.idea/
+.vscode/
+*.pt
+*.pth
+tensorboard/
+wandb/
+proposals.pt
