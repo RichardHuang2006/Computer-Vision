@@ -12,8 +12,8 @@ import torch.nn.functional as F
 from torch.amp import GradScaler, autocast
 
 from src.Classification.common.utils import AverageMeter, format_hms, save_checkpoint
-from src.Classification.dino.multicrop_data import build_multicrop_loader
-from src.Classification.dino.model import DINO
+from src.SelfSupervised.dino.multicrop_data import build_multicrop_loader
+from src.SelfSupervised.dino.model import DINO
 
 
 @torch.no_grad()

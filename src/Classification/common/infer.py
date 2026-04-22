@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
+import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, List, Tuple
 
@@ -11,6 +14,20 @@ from PIL import Image
 from torchvision import transforms
 
 from .data import IMAGENET_MEAN, IMAGENET_STD
+
+
+@contextmanager
+def _cross_platform_path_compat():
+    """Allow un-pickling Linux-saved checkpoints on Windows (PosixPath in args)."""
+    if sys.platform == "win32":
+        saved = pathlib.PosixPath
+        pathlib.PosixPath = pathlib.WindowsPath  # type: ignore[misc,assignment]
+        try:
+            yield
+        finally:
+            pathlib.PosixPath = saved  # type: ignore[misc,assignment]
+    else:
+        yield
 
 ModelFactory = Callable[..., nn.Module]
 
@@ -50,10 +67,11 @@ def load_model_from_ckpt(
     arch: str,
     device: torch.device,
 ) -> nn.Module:
-    try:
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    except TypeError:
-        ckpt = torch.load(ckpt_path, map_location=device)
+    with _cross_platform_path_compat():
+        try:
+            ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        except TypeError:
+            ckpt = torch.load(ckpt_path, map_location=device)
     num_classes = int(ckpt.get("num_classes", 100))
     ex = ckpt.get("extra")
     if isinstance(ex, dict) and "num_classes" in ex:

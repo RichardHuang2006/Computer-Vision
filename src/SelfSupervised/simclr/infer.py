@@ -1,15 +1,14 @@
-"""Run linear probe checkpoint on an image."""
+"""Run SimCLR linear probe checkpoint on an image."""
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 
 from src.Classification.common.infer import run_image
-from src.Classification.dino.linear_probe import ProbeClassifier
-from src.Classification.dino.model import ViTEncoder
+from src.SelfSupervised.simclr.linear_probe import ProbeClassifier
+from src.SelfSupervised.simclr.model import ResNetEncoder
 
 
 def main() -> None:
@@ -26,15 +25,15 @@ def main() -> None:
         ckpt = torch.load(args.ckpt, map_location=device)
     ex = ckpt.get("extra") or {}
     num_classes = int(ex.get("num_classes", ckpt.get("num_classes", 100)))
-    enc = ViTEncoder(img_size=224, patch_size=16, embed_dim=384).to(device)
+    enc = ResNetEncoder().to(device)
     if args.pretrained_encoder:
         pre = torch.load(args.pretrained_encoder, map_location=device, weights_only=False)
-        enc.load_state_dict(pre["student_enc"], strict=True)
+        enc.resnet.load_state_dict(pre["encoder"], strict=True)
     model = ProbeClassifier(enc, num_classes).to(device)
     sd = ckpt["state_dict"]
     model.load_state_dict(sd, strict=True)
     model.eval()
-    pairs = run_image(model, args.image, device, topk=args.topk)
+    pairs = run_image(model, args.image, device, topk=args.topk, image_size=224)
     for c, s in pairs:
         print(f"class_{c}: {s:.4f}")
 

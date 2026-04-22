@@ -1,4 +1,4 @@
-"""Linear probe on frozen DINO ViT encoder (ImageNet-100 classification)."""
+"""Linear probe on frozen ResNet-50 after SimCLR pre-training."""
 from __future__ import annotations
 
 import argparse
@@ -7,20 +7,19 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
-from torch.utils.data import DataLoader
 
 from src.Classification.common.data import build_imagenet100_loaders
-from src.Classification.common.utils import AverageMeter, accuracy, format_hms, save_checkpoint
-from src.Classification.dino.model import ViTEncoder
+from src.Classification.common.utils import AverageMeter, accuracy, save_checkpoint
+from src.SelfSupervised.simclr.model import ResNetEncoder
 
 
 class ProbeClassifier(nn.Module):
-    def __init__(self, encoder: ViTEncoder, num_classes: int) -> None:
+    def __init__(self, encoder: ResNetEncoder, num_classes: int) -> None:
         super().__init__()
         self.encoder = encoder
         for p in self.encoder.parameters():
             p.requires_grad = False
-        self.fc = nn.Linear(encoder.embed_dim, num_classes)
+        self.fc = nn.Linear(encoder.feat_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = self.encoder(x)
@@ -30,7 +29,12 @@ class ProbeClassifier(nn.Module):
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", type=Path, default=Path("data/imagenet100"))
-    p.add_argument("--pretrained", type=Path, required=True, help="dino_pretrained.pt")
+    p.add_argument(
+        "--pretrained",
+        type=Path,
+        required=True,
+        help="simclr_pretrained.pt from pretrain.py",
+    )
     p.add_argument("--out-dir", type=Path, required=True)
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=256)
@@ -40,8 +44,8 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = torch.load(args.pretrained, map_location=device, weights_only=False)
-    enc = ViTEncoder(img_size=224, patch_size=16, embed_dim=384).to(device)
-    enc.load_state_dict(ckpt["student_enc"], strict=True)
+    enc = ResNetEncoder().to(device)
+    enc.resnet.load_state_dict(ckpt["encoder"], strict=True)
 
     train_loader, val_loader, num_classes = build_imagenet100_loaders(
         args.data_dir, batch_size=args.batch_size, num_workers=args.num_workers
@@ -78,7 +82,10 @@ def main() -> None:
                 logits = model(images)
                 a1, _ = accuracy(logits, targets, topk=(1, 5))
                 v1.update(a1, images.size(0))
-        print(f"epoch {epoch+1} val_top1={v1.avg*100:.2f} loss={loss_m.avg:.4f}", flush=True)
+        print(
+            f"epoch {epoch + 1} val_top1={v1.avg * 100:.2f} loss={loss_m.avg:.4f}",
+            flush=True,
+        )
         if v1.avg > best:
             best = v1.avg
             save_checkpoint(

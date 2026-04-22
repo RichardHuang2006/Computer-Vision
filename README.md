@@ -6,9 +6,11 @@ Paper-faithful implementations with shared `common/` training and inference per 
 
 - [`data/`](data/) — cached datasets (gitignored except `.gitkeep`)
 - [`runs/`](runs/) — checkpoints, logs, TensorBoard
-- [`src/Classification/`](src/Classification/) — AlexNet, VGG16-BN, GoogLeNet, ResNet, ViT-S/16, DINO
+- [`src/Classification/`](src/Classification/) — AlexNet, VGG16-BN, GoogLeNet, ResNet, ViT-S/16
+- [`src/SelfSupervised/`](src/SelfSupervised/) — DINO, MAE, SimCLR, MoCo v1, CPC (ImageNet-100)
 - [`src/Segmentation/`](src/Segmentation/) — FCN-8s (VOC 2012)
 - [`src/Detection/`](src/Detection/) — Fast R-CNN, Faster R-CNN, YOLOv1, DETR (COCO-mini)
+- [`src/Generative/`](src/Generative/) — PixelCNN, VAE, DCGAN (CIFAR-10)
 
 ## Setup
 
@@ -33,6 +35,7 @@ On Linux/macOS: `export PYTHONPATH=$PWD`
 1. **ImageNet-100** — `python scripts/prepare_imagenet100.py` (needs Kaggle API / `kaggle.json` in user home or project root)
 2. **VOC 2012** — `python scripts/prepare_voc2012.py` (downloads from official host)
 3. **COCO-mini** — place COCO 2017 `train2017` + `annotations` then `python scripts/prepare_coco_mini.py`
+4. **CIFAR-10** — `python scripts/prepare_cifar10.py` (torchvision download into `data/cifar10/`)
 
 See each script’s docstring for paths.
 
@@ -45,6 +48,29 @@ python -m src.Classification.resnet.train --data-dir data/imagenet100 --out-dir 
 python -m src.Classification.resnet.infer --ckpt runs/resnet50/best.pt --image path/to.jpg
 python -m src.Segmentation.fcn.train --data-dir data/voc2012 --out-dir runs/fcn
 python -m src.Detection.faster_rcnn.train --data-dir data/coco-mini --out-dir runs/frcnn
+python -m src.Generative.pixelcnn.train --data-dir data/cifar10 --out-dir runs/pixelcnn
+python -m src.Generative.dcgan.train --data-dir data/cifar10 --out-dir runs/dcgan
+python -m src.Generative.dcgan.sample --ckpt runs/dcgan/last.pt --out runs/dcgan/grid.png
 ```
 
-DINO uses `pretrain.py` and `linear_probe.py` instead of standard `train.py` for the SSL phase.
+DINO (under `src/SelfSupervised/dino/`) uses `pretrain.py` and `linear_probe.py` instead of standard `train.py` for the SSL phase.
+
+MAE (under `src/SelfSupervised/mae/`):
+
+```bash
+python -m src.SelfSupervised.mae.pretrain --data-dir data/imagenet100 --out-dir runs/mae
+python -m src.SelfSupervised.mae.linear_probe --pretrained runs/mae/mae_pretrained.pt --out-dir runs/mae_probe --data-dir data/imagenet100
+```
+
+SimCLR, MoCo v1, CPC (under `src/SelfSupervised/simclr/`, `moco/`, `cpc/`):
+
+```bash
+python -m src.SelfSupervised.simclr.pretrain --data-dir data/imagenet100 --out-dir runs/simclr
+python -m src.SelfSupervised.simclr.linear_probe --pretrained runs/simclr/simclr_pretrained.pt --out-dir runs/simclr_probe --data-dir data/imagenet100
+
+python -m src.SelfSupervised.moco.pretrain --data-dir data/imagenet100 --out-dir runs/moco
+python -m src.SelfSupervised.moco.linear_probe --pretrained runs/moco/moco_pretrained.pt --out-dir runs/moco_probe --data-dir data/imagenet100
+
+python -m src.SelfSupervised.cpc.pretrain --data-dir data/imagenet100 --out-dir runs/cpc
+python -m src.SelfSupervised.cpc.linear_probe --pretrained runs/cpc/cpc_pretrained.pt --out-dir runs/cpc_probe --data-dir data/imagenet100
+```
