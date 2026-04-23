@@ -3,10 +3,20 @@
 Requires Kaggle credentials at ``~/.kaggle/kaggle.json`` or env vars
 ``KAGGLE_USERNAME`` / ``KAGGLE_KEY``.
 
-Layout produced::
+Produces a flat, label-free layout suitable for self-supervised pretraining
+(DINO, MAE, etc.)::
 
-    data/imagenet100/train/<class_name>/*.JPEG
-    data/imagenet100/val/<class_name>/*.JPEG
+    data/imagenet100/
+        train/
+            <class>__<original_filename>.JPEG
+            ...
+        val/
+            <class>__<original_filename>.JPEG
+            ...
+
+Class information from the Kaggle archive (``train.X1..X4`` / ``val.X`` with
+class subfolders) is folded into the filename as ``<class>__<stem>`` so files
+stay unique and you can still recover the label if you ever need to.
 
 Run from ``Computer Vision``::
 
@@ -22,41 +32,31 @@ import zipfile
 from pathlib import Path
 
 
-def _flatten_train(out: Path) -> None:
-    """Kaggle bundle ships ``train.X1..X4`` plus ``val.X``. Merge into train/ and val/."""
-    # Create canonical split folders
-    train_root = out / "train"
-    val_root = out / "val"
-    train_root.mkdir(parents=True, exist_ok=True)
-    val_root.mkdir(parents=True, exist_ok=True)
+IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff")
 
-    for sub in list(out.iterdir()):
+
+def _flatten_split(extracted_root: Path, split_dest: Path, split_prefixes: tuple[str, ...]) -> int:
+    """Walk every ``train*``/``val*`` bundle under ``extracted_root`` and move
+    all image files into ``split_dest`` as ``<class>__<name>`` (flat)."""
+    split_dest.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for sub in list(extracted_root.iterdir()):
         if not sub.is_dir():
             continue
-        name = sub.name
-        if name.startswith("train"):
-            for cls_dir in sub.iterdir():
-                if cls_dir.is_dir():
-                    dest = train_root / cls_dir.name
-                    if dest.exists():
-                        # move contents
-                        for f in cls_dir.iterdir():
-                            shutil.move(str(f), str(dest / f.name))
-                        cls_dir.rmdir()
-                    else:
-                        shutil.move(str(cls_dir), str(dest))
-            sub.rmdir()
-        elif name.startswith("val"):
-            for cls_dir in sub.iterdir():
-                if cls_dir.is_dir():
-                    dest = val_root / cls_dir.name
-                    if dest.exists():
-                        for f in cls_dir.iterdir():
-                            shutil.move(str(f), str(dest / f.name))
-                        cls_dir.rmdir()
-                    else:
-                        shutil.move(str(cls_dir), str(dest))
-            sub.rmdir()
+        if not sub.name.lower().startswith(split_prefixes):
+            continue
+        for path in sub.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in IMG_EXTENSIONS:
+                continue
+            cls_name = path.parent.name
+            dest_name = f"{cls_name}__{path.name}"
+            dest = split_dest / dest_name
+            if dest.exists():
+                dest = split_dest / f"{cls_name}__{path.stem}_{moved}{path.suffix}"
+            shutil.move(str(path), str(dest))
+            moved += 1
+        shutil.rmtree(sub, ignore_errors=True)
+    return moved
 
 
 def main() -> None:
@@ -65,7 +65,7 @@ def main() -> None:
         "--out-dir",
         type=Path,
         default=Path("data/imagenet100"),
-        help="Destination root for train/val split folders.",
+        help="Destination root. Will contain train/ and val/ with flat image files.",
     )
     p.add_argument(
         "--dataset",
@@ -97,7 +97,6 @@ def main() -> None:
     print(f"Downloading {args.dataset} to {out} ...")
     api.dataset_download_files(args.dataset, path=str(out), quiet=False, unzip=False)
 
-    # Find the downloaded zip
     zips = sorted(out.glob("*.zip"))
     if not zips:
         print("No zip found after download.", file=sys.stderr)
@@ -109,24 +108,29 @@ def main() -> None:
         tmp_path = Path(tmp)
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp_path)
-        # Move top-level children into out/
+
         children = [p for p in tmp_path.iterdir()]
         if len(children) == 1 and children[0].is_dir():
-            inner = children[0]
-            children = list(inner.iterdir())
-        for sub in children:
-            dest = out / sub.name
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.move(str(sub), str(dest))
+            extracted_root = children[0]
+        else:
+            extracted_root = tmp_path
+
+        train_dest = out / "train"
+        val_dest = out / "val"
+        # Clear any previous run
+        for d in (train_dest, val_dest):
+            if d.exists():
+                shutil.rmtree(d)
+
+        n_train = _flatten_split(extracted_root, train_dest, ("train",))
+        n_val = _flatten_split(extracted_root, val_dest, ("val",))
 
     zip_path.unlink(missing_ok=True)
 
-    _flatten_train(out)
-
-    n_train = len(list((out / "train").iterdir())) if (out / "train").exists() else 0
-    n_val = len(list((out / "val").iterdir())) if (out / "val").exists() else 0
-    print(f"Done. train classes = {n_train}, val classes = {n_val}, root = {out}")
+    print(
+        f"Done. {n_train} train images, {n_val} val images at {out}\n"
+        f"  {train_dest}\n  {val_dest}"
+    )
 
 
 if __name__ == "__main__":

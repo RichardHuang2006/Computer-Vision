@@ -1,1 +1,1 @@
-"""Generative models (PixelCNN, VAE, DCGAN, ...)."""
+"""Generative models (PixelCNN, VAE, DCGAN, DiT, ...)."""

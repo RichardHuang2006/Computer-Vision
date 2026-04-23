@@ -16,7 +16,7 @@ def _extract(a: torch.Tensor, t: torch.Tensor, x_shape: tuple[int, ...]) -> torc
 
 
 def make_beta_schedule_linear(num_timesteps: int, beta_start: float, beta_end: float) -> torch.Tensor:
-    return torch.linspace(beta_start, beta_end, num_timesteps, dtype=torch.float64)
+    return torch.linspace(beta_start, beta_end, num_timesteps, dtype=torch.float32)
 
 
 class GaussianDiffusion(nn.Module):
@@ -100,7 +100,6 @@ class GaussianDiffusion(nn.Module):
         model: nn.Module,
         x_start: torch.Tensor,
         y: torch.Tensor,
-        num_classes: int,
         noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         b = x_start.shape[0]
@@ -181,31 +180,28 @@ class GaussianDiffusion(nn.Module):
         if seq[-1] != T - 1:
             seq.append(T - 1)
         seq = sorted(set(seq))
-        # sample from T-1 down to 0 using pairs (seq[i+1], seq[i]) as (t_next, t)
-        seq = list(reversed(seq))
+        # Descending noise level: high t -> low t (each step predicts toward cleaner image).
+        seq_desc = seq[::-1]
         img = torch.randn(*shape, device=device)
-        n_steps = len(seq) - 1
-        for i in range(n_steps):
-            t_cur = seq[i]
-            t_next = seq[i + 1]
+        for t_cur, t_next in zip(seq_desc[:-1], seq_desc[1:]):
             t_b = torch.full((shape[0],), t_cur, device=device, dtype=torch.long)
             eps = self.apply_model(model, img, t_b, y, num_classes, cfg_scale)
-            alpha_bar = self.alphas_cumprod[t_cur]
-            alpha_bar_next = self.alphas_cumprod[t_next]
-            sqrt_ab = math.sqrt(float(alpha_bar))
-            sqrt_omab = math.sqrt(1.0 - float(alpha_bar))
+            alpha_bar = float(self.alphas_cumprod[t_cur])
+            alpha_bar_next = float(self.alphas_cumprod[t_next])
+            sqrt_ab = math.sqrt(alpha_bar)
+            sqrt_omab = math.sqrt(1.0 - alpha_bar)
             pred_x0 = (img - sqrt_omab * eps) / sqrt_ab
             if clip_denoised:
                 pred_x0 = torch.clamp(pred_x0, -1.0, 1.0)
-            sqrt_ab_next = math.sqrt(float(alpha_bar_next))
+            sqrt_ab_next = math.sqrt(alpha_bar_next)
             sigma = (
                 eta
-                * math.sqrt((1.0 - float(alpha_bar_next)) / (1.0 - float(alpha_bar)))
-                * math.sqrt(1.0 - float(alpha_bar) / float(alpha_bar_next))
+                * math.sqrt((1.0 - alpha_bar_next) / max(1e-20, 1.0 - alpha_bar))
+                * math.sqrt(max(0.0, 1.0 - alpha_bar / max(alpha_bar_next, 1e-20)))
             )
-            dir_xt = math.sqrt(max(1e-20, 1.0 - float(alpha_bar_next) - sigma**2)) * eps
-            noise = torch.randn_like(img) if eta > 0 else 0.0
-            img = sqrt_ab_next * pred_x0 + dir_xt + sigma * noise
+            dir_xt = math.sqrt(max(1e-20, 1.0 - alpha_bar_next - sigma**2)) * eps
+            rand = torch.randn_like(img) if eta > 0 else torch.zeros_like(img)
+            img = sqrt_ab_next * pred_x0 + dir_xt + sigma * rand
         return img
 
 

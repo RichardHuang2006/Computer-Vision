@@ -10,7 +10,7 @@ Paper-faithful implementations with shared `common/` training and inference per 
 - [`src/SelfSupervised/`](src/SelfSupervised/) — DINO, MAE, SimCLR, MoCo v1, CPC (ImageNet-100)
 - [`src/Segmentation/`](src/Segmentation/) — FCN-8s (VOC 2012)
 - [`src/Detection/`](src/Detection/) — Fast R-CNN, Faster R-CNN, YOLOv1, DETR (COCO-mini)
-- [`src/Generative/`](src/Generative/) — PixelCNN, VAE, DCGAN (CIFAR-10)
+- [`src/Generative/`](src/Generative/) — PixelCNN, VAE, DCGAN, DiT (CIFAR-10)
 
 ## Setup
 
@@ -51,6 +51,9 @@ python -m src.Detection.faster_rcnn.train --data-dir data/coco-mini --out-dir ru
 python -m src.Generative.pixelcnn.train --data-dir data/cifar10 --out-dir runs/pixelcnn
 python -m src.Generative.dcgan.train --data-dir data/cifar10 --out-dir runs/dcgan
 python -m src.Generative.dcgan.sample --ckpt runs/dcgan/last.pt --out runs/dcgan/grid.png
+
+python -m src.Generative.dit.train --data-dir data/cifar10 --out-dir runs/dit
+python -m src.Generative.dit.sample --ckpt runs/dit/best.pt --out runs/dit/grid.png --cfg-scale 1.5
 ```
 
 DINO (under `src/SelfSupervised/dino/`) uses `pretrain.py` and `linear_probe.py` instead of standard `train.py` for the SSL phase.
