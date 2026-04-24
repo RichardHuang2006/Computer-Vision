@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -16,8 +17,29 @@ from src.Classification.common.data import IMAGENET_MEAN, IMAGENET_STD
 class CocoMini(Dataset):
     def __init__(self, root: Path, split: str = "train", max_size: int = 800) -> None:
         root = Path(root)
-        ann = json.loads((root / "annotations.json").read_text(encoding="utf-8"))
+        ann_path = root / "annotations.json"
+        if not ann_path.is_file():
+            print(
+                f"ERROR: COCO-mini layout not found at {root.resolve()}\n\n"
+                "Expected:\n"
+                f"  {root / 'annotations.json'}\n"
+                f"  {root / 'images'}/<image files>\n\n"
+                "Build the subset from full COCO 2017 train (images + instances JSON):\n"
+                "  python scripts/prepare_coco_mini.py ^\n"
+                "    --images-dir path/to/train2017 ^\n"
+                "    --annotations path/to/instances_train2017.json ^\n"
+                "    --out-dir data/coco-mini\n",
+                file=sys.stderr,
+            )
+            raise FileNotFoundError(ann_path)
         self.images_root = root / "images"
+        if not self.images_root.is_dir():
+            print(
+                f"ERROR: missing images directory:\n  {self.images_root}\n",
+                file=sys.stderr,
+            )
+            raise FileNotFoundError(self.images_root)
+        ann = json.loads(ann_path.read_text(encoding="utf-8"))
         self.id_to_info = {im["id"]: im for im in ann["images"]}
         self.cat_ids = sorted([c["id"] for c in ann["categories"]])
         self.cat_to_idx = {c: i for i, c in enumerate(self.cat_ids)}
